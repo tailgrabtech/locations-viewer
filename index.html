@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  Location viewer for the rewards portal.
+
+  Link format:  index.html?sheet=<GOOGLE_SHEET_ID>
+  Optional:     &tab=<tab name>        read a tab other than the first one
+                &title=<text>         override the heading (default: the sheet's title row)
+                &hideTitle=1          hide the heading (when the portal already shows one)
+                &theme=light|dark     force a theme (default: follows the device)
+
+  Sheet layout the backoffice keeps:
+    Row 1 (optional)  a title, e.g. "AROMATHAI SPA CENTERS"
+    Next row          column headers, e.g. City | Branch | Contact No | Address
+    Rows below        one location per row. Blank rows are ignored.
+  The sheet must be shared as "Anyone with the link: Viewer".
+-->
+<style>
+  :root {
+    --bg: #f6f3ee;
+    --surface: #ffffff;
+    --surface-2: #faf7f1;
+    --head: #f1e6c8;
+    --border: #e6dfd2;
+    --text: #2a2622;
+    --muted: #6f675d;
+    --accent: #a8800f;
+    --accent-strong: #8a6800;
+    --accent-soft: rgba(201, 162, 39, .14);
+    --mark: rgba(232, 190, 50, .45);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1c1a19;
+      --surface: #2a2726;
+      --surface-2: #312d2b;
+      --head: #4a3f28;
+      --border: #3c3735;
+      --text: #ece6dc;
+      --muted: #a39a8e;
+      --accent: #e3b93a;
+      --accent-strong: #f0c94a;
+      --accent-soft: rgba(227, 185, 58, .14);
+      --mark: rgba(227, 185, 58, .38);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1a19;
+    --surface: #2a2726;
+    --surface-2: #312d2b;
+    --head: #4a3f28;
+    --border: #3c3735;
+    --text: #ece6dc;
+    --muted: #a39a8e;
+    --accent: #e3b93a;
+    --accent-strong: #f0c94a;
+    --accent-soft: rgba(227, 185, 58, .14);
+    --mark: rgba(227, 185, 58, .38);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 20px; font-weight: 700; margin: 0 0 16px; letter-spacing: -.01em; }
+
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+  .search { position: relative; flex: 1 1 320px; max-width: 520px; }
+  .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--muted); pointer-events: none; }
+  .search input {
+    width: 100%; font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1.5px solid var(--border); border-radius: 12px; padding: 11px 14px 11px 42px; outline: none;
+  }
+  .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters label { display: flex; flex-direction: column; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); gap: 4px; }
+  select {
+    font: inherit; font-size: 14px; color: var(--text); background-color: var(--surface-2);
+    border: 1.5px solid var(--border); border-radius: 10px; padding: 9px 30px 9px 10px; min-width: 150px; max-width: 240px;
+    appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+  select.active { border-color: var(--accent); background-color: var(--accent-soft); }
+  .clear { font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 10px 4px; }
+  .clear:hover { color: var(--text); }
+
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+
+  .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--head); color: var(--accent-strong);
+    text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+    padding: 14px 16px; white-space: nowrap;
+  }
+  tbody td { padding: 14px 16px; border-top: 1px solid var(--border); vertical-align: top; white-space: pre-line; }
+  tbody tr:hover td { background: var(--surface-2); }
+  td.short { white-space: nowrap; }
+  mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
+  a.map {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    color: var(--accent-strong); font-weight: 600; text-decoration: none;
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+  }
+  a.map:hover { border-color: var(--accent); background: var(--accent-soft); }
+  a.map svg { width: 14px; height: 14px; }
+
+  .state { text-align: center; padding: 56px 16px; color: var(--muted); }
+  .more { display: flex; justify-content: center; margin-top: 16px; }
+  .btn {
+    font: inherit; font-weight: 600; font-size: 14px; padding: 9px 16px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  }
+  .btn:hover { border-color: var(--accent); }
+  .hidden { display: none !important; }
+
+  /* Phone: each row becomes a card */
+  @media (max-width: 720px) {
+    .wrap { padding: 16px; }
+    .filters { width: 100%; }
+    .filters label { flex: 1 1 140px; }
+    select { width: 100%; max-width: none; min-width: 0; }
+    .table-wrap { border: 0; background: none; overflow: visible; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr { border: 1px solid var(--border); border-radius: 12px; padding: 8px 0; margin-bottom: 10px; background: var(--surface); }
+    tbody td { border: 0; padding: 6px 14px; display: grid; grid-template-columns: 100px 1fr; gap: 10px; white-space: pre-line; }
+    tbody td::before { content: attr(data-label); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent-strong); padding-top: 2px; }
+    tbody td.empty { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title" class="hidden"></h1>
+
+  <div id="app" class="hidden">
+    <div class="controls">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search locations…" autocomplete="off" aria-label="Search locations">
+      </div>
+      <div class="filters" id="filters"></div>
+      <button class="clear hidden" id="clearBtn">Clear</button>
+    </div>
+    <div class="meta" id="count"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr id="headRow"></tr></thead>
+        <tbody id="body"></tbody>
+      </table>
+    </div>
+    <div class="state hidden" id="empty">No locations match your search.</div>
+    <div class="more hidden"><button class="btn" id="moreBtn">Show more</button></div>
+  </div>
+
+  <div class="state" id="status">Loading locations…</div>
+</div>
+
+<script>
+(() => {
+  const PAGE = 100;
+  const MAX_FILTER_VALUES = 150;
+  const params = new URLSearchParams(location.search);
+  const sheetId = (params.get('sheet') || '').trim();
+  const tab = params.get('tab');
+  const theme = params.get('theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+
+  const $ = id => document.getElementById(id);
+  const coll = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+  let columns = [];   // [{ key, label, kind: 'text'|'link'|'short' }]
+  let rows = [];      // [{ [key]: string }]
+  let query = '';
+  let filters = {};
+  let shown = PAGE;
+
+  // ---------- load ----------
+  function sheetUrl() {
+    const u = new URL(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq`);
+    u.searchParams.set('tqx', 'out:json');
+    u.searchParams.set('headers', '0');   // we find the header row ourselves
+    if (tab) u.searchParams.set('sheet', tab);
+    return u.toString();
+  }
+
+  async function load() {
+    if (!sheetId) return fail('This link is missing its sheet. Ask the site team for the correct link.');
+    const cacheKey = 'locations:' + sheetId + ':' + (tab || '');
+    try {
+      const res = await fetch(sheetUrl());
+      const text = await res.text();
+      // Google wraps the JSON in a callback: google.visualization.Query.setResponse({...});
+      const json = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+      if (json.status === 'error') throw new Error(json.errors?.map(e => e.detailed_message || e.message).join('; '));
+      const grid = json.table.rows.map(r => (r.c || []).map(c => c == null ? '' : String(c.f ?? c.v ?? '').trim()));
+      try { localStorage.setItem(cacheKey, JSON.stringify(grid)); } catch (e) {}
+      build(grid);
+    } catch (err) {
+      console.error('Could not load sheet', sheetId, err);
+      // Fall back to the last copy this browser saw, so a Google hiccup doesn't blank the page.
+      let cached = null;
+      try { cached = JSON.parse(localStorage.getItem(cacheKey)); } catch (e) {}
+      if (cached) return build(cached);
+      fail('The location list could not be loaded right now. Please try again in a few minutes.');
+    }
+  }
+
+  function fail(msg) {
+    $('status').textContent = msg;
+    $('status').classList.remove('hidden');
+    $('app').classList.add('hidden');
+  }
+
+  // ---------- parse ----------
+  function build(grid) {
+    grid = grid.filter(r => r.some(Boolean));
+    // Header = first row with at least 2 filled cells. A single-cell row above it is the title.
+    const h = grid.findIndex(r => r.filter(Boolean).length >= 2);
+    if (h < 0) return fail('No locations have been added yet.');
+    const titleRow = grid.slice(0, h).find(r => r.filter(Boolean).length === 1);
+    const title = params.get('title') || (titleRow ? titleRow.find(Boolean) : '');
+    if (title && params.get('hideTitle') !== '1') { $('title').textContent = title; $('title').classList.remove('hidden'); }
+    if (title) document.title = title;
+
+    const header = grid[h];
+    const body = grid.slice(h + 1);
+    columns = header.map((label, i) => ({ key: 'c' + i, label: label || '', i }))
+      .filter(c => c.label || body.some(r => r[c.i]));          // drop unnamed empty columns
+    rows = body.map(r => Object.fromEntries(columns.map(c => [c.key, r[c.i] || ''])));
+
+    for (const c of columns) {
+      const vals = rows.map(r => r[c.key]).filter(Boolean);
+      const isUrl = vals.length && vals.every(v => /^https?:\/\//i.test(v));
+      const avgLen = vals.join('').length / (vals.length || 1);
+      c.kind = isUrl ? 'link' : avgLen <= 24 ? 'short' : 'text';
+      const digits = (vals.join('').match(/\d/g) || []).length / (vals.join('').length || 1);
+      c.filterable = !isUrl && avgLen <= 30 && digits < 0.4;
+    }
+
+    $('status').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    render();
+  }
+
+  // ---------- filtering ----------
+  const matchesFilters = (r, skip) => Object.entries(filters).every(([k, v]) => k === skip || !v || r[k] === v);
+
+  function visibleRows() {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const textCols = columns.filter(c => c.kind !== 'link');
+    const out = rows.filter(r => {
+      if (!matchesFilters(r)) return false;
+      if (!terms.length) return true;
+      const hay = textCols.map(c => r[c.key]).join(' \u0001 ').toLowerCase();
+      return terms.every(t => hay.includes(t));
+    });
+    // Sort by the first filterable column (usually City), keeping sheet order inside each group.
+    const first = columns.find(c => c.filterable);
+    if (first) out.sort((a, b) => coll.compare(a[first.key], b[first.key]));
+    return { out, terms };
+  }
+
+  // ---------- render ----------
+  const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function highlight(text, terms) {
+    let html = esc(text);
+    if (terms.length) html = html.replace(new RegExp(`(${terms.map(t => reEsc(esc(t))).join('|')})`, 'gi'), '<mark>$1</mark>');
+    return html;
+  }
+  const pinIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+
+  function render() { renderFilters(); renderTable(); }
+
+  function renderFilters() {
+    const box = $('filters');
+    box.replaceChildren();
+    const filterCols = columns.filter(c => c.filterable);
+    filterCols.forEach((c, idx) => {
+      // A dropdown is narrowed only by the dropdowns to its left (City narrows Locality, never the reverse),
+      // so customers can always switch city without clearing anything first.
+      const parents = filterCols.slice(0, idx).map(p => p.key);
+      const inScope = r => parents.every(k => !filters[k] || r[k] === filters[k]);
+      const counts = new Map();
+      for (const r of rows) if (r[c.key] && inScope(r)) counts.set(r[c.key], (counts.get(r[c.key]) || 0) + 1);
+      const pool = rows.filter(inScope).length;
+      // Only offer a dropdown when the column groups rows (City, Locality), not when nearly every row is unique (Branch, Center).
+      const useful = counts.size > 1 && counts.size <= MAX_FILTER_VALUES && counts.size < pool * 0.8;
+      if (!useful && !filters[c.key]) return;
+      const sel = document.createElement('select');
+      sel.className = filters[c.key] ? 'active' : '';
+      sel.add(new Option(`All`, ''));
+      for (const [v, n] of [...counts].sort((a, b) => coll.compare(a[0], b[0]))) sel.add(new Option(`${v} (${n})`, v, false, filters[c.key] === v));
+      sel.onchange = () => {
+        if (sel.value) filters[c.key] = sel.value; else delete filters[c.key];
+        // Changing a dropdown resets the ones to its right (new City → Locality back to All).
+        for (const child of filterCols.slice(idx + 1)) delete filters[child.key];
+        shown = PAGE; render();
+      };
+      const label = document.createElement('label');
+      label.append(c.label, sel);
+      box.append(label);
+    });
+    $('clearBtn').classList.toggle('hidden', !Object.keys(filters).length && !query);
+  }
+
+  function renderTable() {
+    $('headRow').innerHTML = columns.map(c => `<th>${esc(c.label)}</th>`).join('');
+    const { out, terms } = visibleRows();
+    $('body').innerHTML = out.slice(0, shown).map(r => '<tr>' + columns.map(c => {
+      const v = r[c.key];
+      if (!v) return `<td class="empty" data-label="${esc(c.label)}"></td>`;
+      if (c.kind === 'link') return `<td data-label="${esc(c.label)}"><a class="map" href="${esc(v)}" target="_blank" rel="noopener">${pinIcon}View on map</a></td>`;
+      return `<td class="${c.kind === 'short' ? 'short' : ''}" data-label="${esc(c.label)}">${highlight(v, terms)}</td>`;
+    }).join('') + '</tr>').join('');
+
+    const n = out.length;
+    $('count').textContent = n === rows.length ? `${n.toLocaleString()} locations` : `${n.toLocaleString()} of ${rows.length.toLocaleString()} locations`;
+    $('empty').classList.toggle('hidden', n > 0);
+    $('moreBtn').parentElement.classList.toggle('hidden', n <= shown);
+    $('moreBtn').textContent = `Show more (${(n - shown).toLocaleString()} more)`;
+    $('clearBtn').classList.toggle('hidden', !Object.keys(filters).length && !query);
+  }
+
+  // ---------- events ----------
+  let t;
+  $('q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { query = e.target.value.trim(); shown = PAGE; renderTable(); renderFilters(); }, 120); });
+  $('clearBtn').onclick = () => { filters = {}; query = ''; $('q').value = ''; shown = PAGE; render(); };
+  $('moreBtn').onclick = () => { shown += PAGE; renderTable(); };
+
+  load();
+})();
+</script>
+</body>
+</html>
