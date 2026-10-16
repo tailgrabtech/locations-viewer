@@ -7,7 +7,7 @@ A single page that shows a Google Sheet as a searchable, filterable table of loc
 1. Put the locations in a Google Sheet. Row 1 can hold a title (for example "AROMATHAI SPA CENTERS"). The next row holds the column headers, and each row below it is one location.
 2. Share the sheet: **Share → General access → Anyone with the link → Viewer**.
 3. Copy the sheet ID from its URL: `https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit`.
-4. The portal link is `https://ashvinpanicker.github.io/locations-viewer/?sheet=<SHEET_ID>`.
+4. The portal link is `https://tailgrabtech.github.io/locations-viewer/?sheet=<SHEET_ID>`.
 
 Edits in the sheet appear on the page within a few minutes. Nothing needs to be redeployed.
 
