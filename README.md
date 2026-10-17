@@ -2,6 +2,16 @@
 
 A single page that shows a Google Sheet as a searchable, filterable table of locations for the rewards portal.
 
+## Landing page
+
+`https://tailgrabtech.github.io/locations-viewer/` shows a "Choose a partner" dropdown. The list comes from the [directory sheet](https://docs.google.com/spreadsheets/d/1UmatzDjjG3SAEb_aVqQ8uoLvHK7nzfePE5BB00y66jQ/edit), which has three columns:
+
+| Partner | Sheet link | Show (Yes/No) |
+|---|---|---|
+| Name shown in the dropdown | Link to that partner's locations sheet | `No` hides it, for example while the sheet is still empty |
+
+To add a partner, add a row. The directory sheet must also be shared as **Anyone with the link → Viewer**.
+
 ## Making a link for a merchant
 
 1. Put the locations in a Google Sheet. Row 1 can hold a title (for example "AROMATHAI SPA CENTERS"). The next row holds the column headers, and each row below it is one location.

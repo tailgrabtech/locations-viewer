@@ -99,6 +99,10 @@
 
   .meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 
+  .picker { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .picker label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--accent-strong); }
+  .picker select { font-size: 16px; font-weight: 600; padding: 12px 36px 12px 14px; min-width: 280px; max-width: 100%; }
+
   .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   thead th {
@@ -148,6 +152,11 @@
 <div class="wrap">
   <h1 id="title" class="hidden"></h1>
 
+  <div id="picker" class="picker hidden">
+    <label for="partnerSel">Choose a partner</label>
+    <select id="partnerSel"><option value="">Select…</option></select>
+  </div>
+
   <div id="app" class="hidden">
     <div class="controls">
       <div class="search">
@@ -175,8 +184,10 @@
 (() => {
   const PAGE = 100;
   const MAX_FILTER_VALUES = 150;
+  // The directory sheet lists every partner (Partner | Sheet link | Show). It powers the landing page.
+  const DIRECTORY_SHEET = '1UmatzDjjG3SAEb_aVqQ8uoLvHK7nzfePE5BB00y66jQ';
   const params = new URLSearchParams(location.search);
-  const sheetId = (params.get('sheet') || '').trim();
+  const directSheet = (params.get('sheet') || '').trim();   // ?sheet=… shows one partner with no picker (for embedding)
   const tab = params.get('tab');
   const theme = params.get('theme');
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
@@ -189,54 +200,91 @@
   let query = '';
   let filters = {};
   let shown = PAGE;
+  let loadToken = 0;  // ignores slow responses after the customer has picked another partner
 
-  // ---------- load ----------
-  function sheetUrl() {
-    const u = new URL(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq`);
+  // ---------- fetch ----------
+  // Returns the sheet as a 2D array of display strings, falling back to this browser's last copy if Google can't be reached.
+  async function fetchGrid(id, tabName) {
+    const u = new URL(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq`);
     u.searchParams.set('tqx', 'out:json');
     u.searchParams.set('headers', '0');   // we find the header row ourselves
-    if (tab) u.searchParams.set('sheet', tab);
-    return u.toString();
-  }
-
-  async function load() {
-    if (!sheetId) return fail('This link is missing its sheet. Ask the site team for the correct link.');
-    const cacheKey = 'locations:' + sheetId + ':' + (tab || '');
+    if (tabName) u.searchParams.set('sheet', tabName);
+    const cacheKey = 'locations:' + id + ':' + (tabName || '');
     try {
-      const res = await fetch(sheetUrl());
-      const text = await res.text();
+      const text = await (await fetch(u)).text();
       // Google wraps the JSON in a callback: google.visualization.Query.setResponse({...});
       const json = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
       if (json.status === 'error') throw new Error(json.errors?.map(e => e.detailed_message || e.message).join('; '));
       const grid = json.table.rows.map(r => (r.c || []).map(c => c == null ? '' : String(c.f ?? c.v ?? '').trim()));
       try { localStorage.setItem(cacheKey, JSON.stringify(grid)); } catch (e) {}
-      build(grid);
+      return grid;
     } catch (err) {
-      console.error('Could not load sheet', sheetId, err);
-      // Fall back to the last copy this browser saw, so a Google hiccup doesn't blank the page.
-      let cached = null;
-      try { cached = JSON.parse(localStorage.getItem(cacheKey)); } catch (e) {}
-      if (cached) return build(cached);
-      fail('The location list could not be loaded right now. Please try again in a few minutes.');
+      console.error('Could not load sheet', id, err);
+      try { const cached = JSON.parse(localStorage.getItem(cacheKey)); if (cached) return cached; } catch (e) {}
+      return null;
     }
   }
 
-  function fail(msg) {
+  async function loadSheet(id, { showTitle }) {
+    const token = ++loadToken;
+    filters = {}; query = ''; $('q').value = ''; shown = PAGE;
+    $('app').classList.add('hidden');
+    $('title').classList.add('hidden');
+    status('Loading locations…');
+    const grid = await fetchGrid(id, tab);
+    if (token !== loadToken) return;
+    if (!grid) return fail('The location list could not be loaded right now. Please try again in a few minutes.');
+    build(grid, showTitle);
+  }
+
+  // ---------- landing page ----------
+  const sheetIdFrom = s => (s.match(/\/d\/([\w-]{20,})/) || s.match(/^([\w-]{25,})$/) || [])[1];
+
+  async function loadDirectory() {
+    const grid = await fetchGrid(params.get('list') || DIRECTORY_SHEET);
+    if (!grid) return fail('The partner list could not be loaded right now. Please try again in a few minutes.');
+    const [header = [], ...body] = grid.filter(r => r.some(Boolean));
+    const showCol = header.findIndex(h => /show/i.test(h));
+    const partners = body
+      .map(r => ({ name: r[0], id: sheetIdFrom(r.find(c => sheetIdFrom(c)) || ''), show: showCol < 0 || !/^no$/i.test(r[showCol] || '') }))
+      .filter(p => p.name && p.id && p.show)
+      .sort((a, b) => coll.compare(a.name, b.name));
+
+    const sel = $('partnerSel');
+    for (const p of partners) sel.add(new Option(p.name, p.id));
+    $('picker').classList.remove('hidden');
+    sel.onchange = () => {
+      const url = new URL(location.href);
+      if (sel.value) url.searchParams.set('partner', sel.value); else url.searchParams.delete('partner');
+      history.replaceState(null, '', url);   // keeps a shareable link to the chosen partner
+      if (sel.value) loadSheet(sel.value, { showTitle: false });
+      else { $('app').classList.add('hidden'); status('Choose a partner to see where the offer can be used.'); }
+    };
+    const preset = params.get('partner');
+    if (preset && partners.some(p => p.id === preset)) { sel.value = preset; sel.onchange(); }
+    else status('Choose a partner to see where the offer can be used.');
+  }
+
+  function status(msg) {
     $('status').textContent = msg;
     $('status').classList.remove('hidden');
+  }
+
+  function fail(msg) {
+    status(msg);
     $('app').classList.add('hidden');
   }
 
   // ---------- parse ----------
-  function build(grid) {
+  function build(grid, showTitle) {
     grid = grid.filter(r => r.some(Boolean));
     // Header = first row with at least 2 filled cells. A single-cell row above it is the title.
     const h = grid.findIndex(r => r.filter(Boolean).length >= 2);
     if (h < 0) return fail('No locations have been added yet.');
     const titleRow = grid.slice(0, h).find(r => r.filter(Boolean).length === 1);
     const title = params.get('title') || (titleRow ? titleRow.find(Boolean) : '');
-    if (title && params.get('hideTitle') !== '1') { $('title').textContent = title; $('title').classList.remove('hidden'); }
-    if (title) document.title = title;
+    if (title && showTitle && params.get('hideTitle') !== '1') { $('title').textContent = title; $('title').classList.remove('hidden'); }
+    if (title && showTitle) document.title = title;
 
     const header = grid[h];
     const body = grid.slice(h + 1);
@@ -345,7 +393,8 @@
   $('clearBtn').onclick = () => { filters = {}; query = ''; $('q').value = ''; shown = PAGE; render(); };
   $('moreBtn').onclick = () => { shown += PAGE; renderTable(); };
 
-  load();
+  if (directSheet) loadSheet(directSheet, { showTitle: true });
+  else { document.title = 'Partner locations'; loadDirectory(); }
 })();
 </script>
 </body>
