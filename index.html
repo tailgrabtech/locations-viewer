@@ -332,6 +332,7 @@
 
     const n = out.length;
     $('count').textContent = n === rows.length ? `${n.toLocaleString()} locations` : `${n.toLocaleString()} of ${rows.length.toLocaleString()} locations`;
+    $('empty').textContent = rows.length ? 'No locations match your search.' : 'No locations have been added yet.';
     $('empty').classList.toggle('hidden', n > 0);
     $('moreBtn').parentElement.classList.toggle('hidden', n <= shown);
     $('moreBtn').textContent = `Show more (${(n - shown).toLocaleString()} more)`;
