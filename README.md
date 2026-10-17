@@ -4,7 +4,7 @@ A single page that shows a Google Sheet as a searchable, filterable table of loc
 
 ## Landing page
 
-`https://tailgrabtech.github.io/locations-viewer/` shows a "Choose a partner" dropdown. The list comes from the [directory sheet](https://docs.google.com/spreadsheets/d/1UmatzDjjG3SAEb_aVqQ8uoLvHK7nzfePE5BB00y66jQ/edit), which has three columns:
+`https://tailgrabtech.github.io/locations-viewer/` shows a "Choose a partner" dropdown. The list comes from the [directory sheet](https://docs.google.com/spreadsheets/d/1Co6Auh9NkTaH7QTPwQ0PHfZwYhfBWmw4SMprJq-HxmI/edit), which has three columns:
 
 | Partner | Sheet link | Show (Yes/No) |
 |---|---|---|
