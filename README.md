@@ -27,7 +27,7 @@ Edits in the sheet appear on the page within a few minutes. Nothing needs to be 
 |---|---|
 | `&hideTitle=1` | Hides the heading, for pages where the portal already shows one |
 | `&title=Some%20Title` | Replaces the heading taken from the sheet |
-| `&tab=Tab%20Name` | Reads a tab other than the first one |
+| `&gid=123456` | Reads a tab other than the first one (copy the `gid=` number from the sheet's URL while that tab is open) |
 | `&theme=light` or `&theme=dark` | Forces a colour theme instead of following the device |
 
 ## How it behaves

@@ -10,7 +10,7 @@
   Location viewer for the rewards portal.
 
   Link format:  index.html?sheet=<GOOGLE_SHEET_ID>
-  Optional:     &tab=<tab name>        read a tab other than the first one
+  Optional:     &gid=<tab number>      read a tab other than the first one (the gid=… in the sheet's URL)
                 &title=<text>         override the heading (default: the sheet's title row)
                 &hideTitle=1          hide the heading (when the portal already shows one)
                 &theme=light|dark     force a theme (default: follows the device)
@@ -188,7 +188,7 @@
   const DIRECTORY_SHEET = '1Co6Auh9NkTaH7QTPwQ0PHfZwYhfBWmw4SMprJq-HxmI';
   const params = new URLSearchParams(location.search);
   const directSheet = (params.get('sheet') || '').trim();   // ?sheet=… shows one partner with no picker (for embedding)
-  const tab = params.get('tab');
+  const gid = params.get('gid');
   const theme = params.get('theme');
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
 
@@ -204,18 +204,17 @@
 
   // ---------- fetch ----------
   // Returns the sheet as a 2D array of display strings, falling back to this browser's last copy if Google can't be reached.
-  async function fetchGrid(id, tabName) {
-    const u = new URL(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq`);
-    u.searchParams.set('tqx', 'out:json');
-    u.searchParams.set('headers', '0');   // we find the header row ourselves
-    if (tabName) u.searchParams.set('sheet', tabName);
-    const cacheKey = 'locations:' + id + ':' + (tabName || '');
+  // Uses the CSV export rather than the gviz endpoint: gviz guesses a type per column and silently drops
+  // cells that don't fit (e.g. a "Contact No" header above a column of numbers). CSV keeps every cell as shown.
+  async function fetchGrid(id, gid) {
+    const u = new URL(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export`);
+    u.searchParams.set('format', 'csv');
+    if (gid) u.searchParams.set('gid', gid);
+    const cacheKey = 'locations:' + id + ':' + (gid || '');
     try {
-      const text = await (await fetch(u)).text();
-      // Google wraps the JSON in a callback: google.visualization.Query.setResponse({...});
-      const json = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
-      if (json.status === 'error') throw new Error(json.errors?.map(e => e.detailed_message || e.message).join('; '));
-      const grid = json.table.rows.map(r => (r.c || []).map(c => c == null ? '' : String(c.f ?? c.v ?? '').trim()));
+      const res = await fetch(u);
+      if (!res.ok || !/csv/i.test(res.headers.get('content-type') || '')) throw new Error('HTTP ' + res.status);
+      const grid = parseCsv(await res.text()).map(r => r.map(c => c.trim()));
       try { localStorage.setItem(cacheKey, JSON.stringify(grid)); } catch (e) {}
       return grid;
     } catch (err) {
@@ -225,20 +224,40 @@
     }
   }
 
+  // RFC 4180 CSV: quoted fields may contain commas, doubled quotes and line breaks.
+  function parseCsv(text) {
+    const rows = []; let row = []; let field = ''; let quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (quoted) {
+        if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (ch === '"') quoted = false;
+        else field += ch;
+      } else if (ch === '"') quoted = true;
+      else if (ch === ',') { row.push(field); field = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); rows.push(row); row = []; field = '';
+      } else field += ch;
+    }
+    if (field || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
   async function loadSheet(id, { showTitle }) {
     const token = ++loadToken;
     filters = {}; query = ''; $('q').value = ''; shown = PAGE;
     $('app').classList.add('hidden');
     $('title').classList.add('hidden');
     status('Loading locations…');
-    const grid = await fetchGrid(id, tab);
+    const grid = await fetchGrid(id, gid);
     if (token !== loadToken) return;
     if (!grid) return fail('The location list could not be loaded right now. Please try again in a few minutes.');
     build(grid, showTitle);
   }
 
   // ---------- landing page ----------
-  const sheetIdFrom = s => (s.match(/\/d\/([\w-]{20,})/) || s.match(/^([\w-]{25,})$/) || [])[1];
+  const sheetIdFrom = s => (s.match(/\/d\/([\w-]{20,})/) || s.match(/[?&]id=([\w-]{20,})/) || s.match(/^([\w-]{25,})$/) || [])[1];
 
   async function loadDirectory() {
     const grid = await fetchGrid(params.get('list') || DIRECTORY_SHEET);
